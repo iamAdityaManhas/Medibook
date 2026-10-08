@@ -24,6 +24,7 @@ const Appointment = () => {
     }
   }
 
+  // Generates appointment slots with 20-minute durations
   const getAvailableSlots = () => {
     if (!docInfo) return
     setDocSlots([])
@@ -37,40 +38,59 @@ const Appointment = () => {
       const endTime = new Date(currentDate)
       endTime.setHours(21, 0, 0, 0)
 
+      // Set starting hours and round to next 20-minute interval if booking today
       if (today.getDate() === currentDate.getDate()) {
-        currentDate.setHours(currentDate.getHours() > 10 ? currentDate.getHours() + 1 : 10)
-        currentDate.setMinutes(currentDate.getMinutes() > 30 ? 30 : 0)
+        const currentHours = currentDate.getHours()
+        const currentMinutes = currentDate.getMinutes()
+
+        if (currentHours >= 10) {
+          // Align current time to next 20-minute step (00, 20, 40)
+          if (currentMinutes > 40) {
+            currentDate.setHours(currentHours + 1)
+            currentDate.setMinutes(0, 0, 0)
+          } else if (currentMinutes > 20) {
+            currentDate.setMinutes(40, 0, 0)
+          } else if (currentMinutes > 0) {
+            currentDate.setMinutes(20, 0, 0)
+          } else {
+            currentDate.setMinutes(0, 0, 0)
+          }
+        } else {
+          currentDate.setHours(10, 0, 0, 0)
+        }
       } else {
-        currentDate.setHours(10)
-        currentDate.setMinutes(0)
+        currentDate.setHours(10, 0, 0, 0)
       }
 
       const timeSlots = []
 
+      // Advance by 20 minutes each cycle until 9:00 PM
       while (currentDate < endTime) {
         const formattedTime = currentDate.toLocaleTimeString([], {
           hour: '2-digit',
-          minute: '2-digit'
+          minute: '2-digit',
         })
 
         const day = currentDate.getDate()
         const month = currentDate.getMonth() + 1
         const year = currentDate.getFullYear()
         const slotDate = `${day}_${month}_${year}`
-        const slotTime = formattedTime
+        const slotTimeKey = formattedTime
 
+        // Check if slot has already been booked by another patient
         const isSlotAvailable =
           !docInfo?.slots_booked?.[slotDate] ||
-          !docInfo.slots_booked[slotDate].includes(slotTime)
+          !docInfo.slots_booked[slotDate].includes(slotTimeKey)
 
         if (isSlotAvailable) {
           timeSlots.push({
             datetime: new Date(currentDate),
-            time: formattedTime
+            time: formattedTime,
           })
         }
 
-        currentDate.setMinutes(currentDate.getMinutes() + 30)
+        // Increment by 20 minutes
+        currentDate.setMinutes(currentDate.getMinutes() + 20)
       }
 
       setDocSlots((prev) => [...prev, timeSlots])
@@ -78,7 +98,6 @@ const Appointment = () => {
   }
 
   const bookAppointment = async () => {
-
     if (!token) {
       toast.warning('Login to book appointment')
       return navigate('/login')
@@ -89,17 +108,25 @@ const Appointment = () => {
       return
     }
 
+    if (!docSlots[slotIndex] || docSlots[slotIndex].length === 0) {
+      toast.warning('No available slots for this date')
+      return
+    }
+
     const date = docSlots[slotIndex][0].datetime
 
     let day = date.getDate()
     let month = date.getMonth() + 1
     let year = date.getFullYear()
 
-    const slotDate = day + "_" + month + "_" + year
+    const slotDate = `${day}_${month}_${year}`
 
     try {
-
-      const { data } = await axios.post(backendUrl + '/api/user/book-appointment', { docId, slotDate, slotTime }, { headers: { token } })
+      const { data } = await axios.post(
+        backendUrl + '/api/user/book-appointment',
+        { docId, slotDate, slotTime },
+        { headers: { token } }
+      )
       if (data.success) {
         toast.success(data.message)
         getDoctorsData()
@@ -107,12 +134,10 @@ const Appointment = () => {
       } else {
         toast.error(data.message)
       }
-
     } catch (error) {
       console.log(error)
       toast.error(error.message)
     }
-
   }
 
   useEffect(() => {
@@ -130,7 +155,6 @@ const Appointment = () => {
   return (
     docInfo && (
       <div className='bg-surface dark:bg-dark-surface min-h-screen px-6 md:px-16 py-8'>
-
         <div className='grid grid-cols-1 lg:grid-cols-3 gap-6 items-start'>
 
           {/* LEFT — doctor info (2/3 width) */}
@@ -177,7 +201,10 @@ const Appointment = () => {
               {docSlots.length > 0 &&
                 docSlots.map((item, index) => (
                   <div
-                    onClick={() => setSlotIndex(index)}
+                    onClick={() => {
+                      setSlotIndex(index)
+                      setSlotTime('')
+                    }}
                     key={index}
                     className={`text-center py-2.5 px-3 min-w-14 rounded-xl cursor-pointer flex-shrink-0 transition-all ${
                       slotIndex === index
@@ -193,7 +220,7 @@ const Appointment = () => {
 
             {/* Time slot grid */}
             <p className='text-xs font-medium uppercase tracking-wide text-muted dark:text-dark-muted mt-5 mb-2'>
-              Available times
+              Available times (20 mins)
             </p>
             <div className='grid grid-cols-3 gap-2'>
               {docSlots.length > 0 &&
